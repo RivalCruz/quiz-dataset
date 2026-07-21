@@ -2,7 +2,7 @@ import os
 import random
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -21,7 +21,7 @@ class AnswerRequest(BaseModel):
 app = FastAPI(
     title="AI vs Human Quiz API",
     description="FastAPI dataset service for the UNESCO Youth Hackathon game.",
-    version="2.0.0",
+    version="2.1.0",
 )
 
 
@@ -40,14 +40,20 @@ app.add_middleware(
 )
 
 
-def build_media_url(request: Request, content: str) -> str:
-    """Return an absolute URL for image/video content."""
+def build_media_url(content: str) -> str:
+    """Convert a relative dataset path into a public Vercel Blob URL."""
     if content.startswith(("http://", "https://")):
         return content
 
-    configured_base_url = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
-    base_url = configured_base_url or str(request.base_url).rstrip("/")
-    return f"{base_url}/{content.lstrip('/')}"
+    blob_base_url = os.getenv("BLOB_BASE_URL", "").strip().rstrip("/")
+
+    if not blob_base_url:
+        raise HTTPException(
+            status_code=500,
+            detail="BLOB_BASE_URL is not configured in Vercel.",
+        )
+
+    return f"{blob_base_url}/{content.lstrip('/')}"
 
 
 def determine_answer(item: dict) -> Guess:
@@ -81,7 +87,7 @@ def determine_answer(item: dict) -> Guess:
     )
 
 
-def serialize_public_item(request: Request, item: dict) -> dict:
+def serialize_public_item(item: dict) -> dict:
     """Return game content without exposing the hidden answer."""
     public_item = {
         "id": item["id"],
@@ -92,17 +98,17 @@ def serialize_public_item(request: Request, item: dict) -> dict:
     }
 
     if item["content_type"] in {"image", "video"}:
-        public_item["content"] = build_media_url(request, str(item["content"]))
+        public_item["content"] = build_media_url(str(item["content"]))
 
     return public_item
 
 
-def serialize_full_item(request: Request, item: dict) -> dict:
+def serialize_full_item(item: dict) -> dict:
     full_item = dict(item)
     full_item["answer"] = determine_answer(item)
 
     if item["content_type"] in {"image", "video"}:
-        full_item["content"] = build_media_url(request, str(item["content"]))
+        full_item["content"] = build_media_url(str(item["content"]))
 
     return full_item
 
@@ -124,11 +130,7 @@ def health() -> dict:
 
 
 @app.get("/api/items")
-def get_items(
-    request: Request,
-    difficulty: Difficulty | None = None,
-    content_type: ContentType | None = None,
-) -> dict:
+def get_items(difficulty: Difficulty | None = None,content_type: ContentType | None = None,) -> dict:
     selected_items = all_items
 
     if difficulty is not None:
@@ -143,37 +145,33 @@ def get_items(
 
     return {
         "count": len(selected_items),
-        "items": [serialize_public_item(request, item) for item in selected_items],
+        "items": [serialize_public_item(item) for item in selected_items],
     }
 
 
 @app.get("/api/items/{item_id}")
-def get_item(request: Request, item_id: str) -> dict:
+def get_item(item_id: str) -> dict:
     item = items_by_id.get(item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    return serialize_public_item(request, item)
+    return serialize_public_item(item)
 
 
 @app.get("/api/quiz")
-def create_quiz(
-    request: Request,
-    difficulty: Difficulty,
-    count: int = Query(default=6, ge=1, le=15),
-) -> dict:
+def create_quiz(difficulty: Difficulty, count: int = Query(default=6, ge=1, le=16),) -> dict:
     pool = [item for item in all_items if item["difficulty"] == difficulty]
     selected_items = random.sample(pool, min(count, len(pool)))
 
     return {
         "difficulty": difficulty,
         "count": len(selected_items),
-        "items": [serialize_public_item(request, item) for item in selected_items],
+        "items": [serialize_public_item(item) for item in selected_items],
     }
 
 
 @app.post("/api/answer")
-def check_answer(request: Request, answer_request: AnswerRequest) -> dict:
+def check_answer(answer_request: AnswerRequest) -> dict:
     item = items_by_id.get(answer_request.item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -189,7 +187,7 @@ def check_answer(request: Request, answer_request: AnswerRequest) -> dict:
         "explanation": item.get("explanation", ""),
         "key_points": item.get("key_points", []),
         "content": (
-            build_media_url(request, str(item["content"]))
+            build_media_url(str(item["content"]))
             if item["content_type"] in {"image", "video"}
             else item.get("content")
         ),
@@ -197,18 +195,15 @@ def check_answer(request: Request, answer_request: AnswerRequest) -> dict:
 
 
 @app.get("/api/admin/items")
-def get_full_dataset(
-    request: Request,
-    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-) -> dict:
+def get_full_dataset(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),) -> dict:
     expected_key = os.getenv("ADMIN_KEY", "").strip()
 
     if not expected_key:
         raise HTTPException(status_code=503, detail="ADMIN_KEY is not configured")
-    if x_admin_key != expected_key:
+    if x_admin_key != expected_key: 
         raise HTTPException(status_code=401, detail="Invalid admin key")
-
+    
     return {
         "count": len(all_items),
-        "items": [serialize_full_item(request, item) for item in all_items],
+        "items": [serialize_full_item(item) for item in all_items],
     }
