@@ -149,14 +149,14 @@ def get_items(difficulty: Difficulty | None = None,content_type: ContentType | N
     }
 
 
-@app.get("/api/items/{item_id}")
+""" @app.get("/api/items/{item_id}")
 def get_item(item_id: str) -> dict:
     item = items_by_id.get(item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
 
     return serialize_public_item(item)
-
+ """
 
 @app.get("/api/quiz")
 def create_quiz(difficulty: Difficulty, count: int = Query(default=6, ge=1, le=16),) -> dict:
@@ -194,16 +194,16 @@ def check_answer(answer_request: AnswerRequest) -> dict:
     }
 
 
-@app.get("/api/admin/items")
-def get_full_dataset(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),) -> dict:
-    expected_key = os.getenv("ADMIN_KEY", "").strip()
+# @app.get("/api/admin/items")
+# def get_full_dataset(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),) -> dict:
+#     expected_key = os.getenv("ADMIN_KEY", "").strip()
 
-    if not expected_key:
-        raise HTTPException(status_code=503, detail="ADMIN_KEY is not configured")
-    if x_admin_key != expected_key: 
-        raise HTTPException(status_code=401, detail="Invalid admin key")
+#     if not expected_key:
+#         raise HTTPException(status_code=503, detail="ADMIN_KEY is not configured")
+#     if x_admin_key != expected_key: 
+#         raise HTTPException(status_code=401, detail="Invalid admin key")
     
-    return {
-        "count": len(all_items),
-        "items": [serialize_full_item(item) for item in all_items],
-    }
+#     return {
+#         "count": len(all_items),
+#         "items": [serialize_full_item(item) for item in all_items],
+#     }
